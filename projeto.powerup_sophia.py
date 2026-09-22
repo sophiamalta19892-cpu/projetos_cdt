@@ -1,13 +1,15 @@
-from flask import Flask, request, redirect, url_for, render_template_string, session
+from flask import Flask, request, redirect, url_for, render_template_string, session, Response
 import sqlite3
 import hashlib
 import os
+import json
 
 app = Flask(__name__)
 app.secret_key = "power_up_sophia_2026"
 
+
 # ============================================================
-# BANCO DE DADOS
+# CONEXÃO COM O BANCO DE DADOS
 # ============================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,230 +22,56 @@ def conectar_banco():
     return conexao
 
 
-def criar_banco():
-
-    conexao = conectar_banco()
-
-    cursor = conexao.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            telefone TEXT NOT NULL,
-            cep TEXT NOT NULL,
-            data_nascimento TEXT NOT NULL,
-            academia TEXT NOT NULL,
-            senha TEXT NOT NULL
-        )
-    """)
-
-    conexao.commit()
-    conexao.close()
-
-
 def criar_hash_senha(senha):
     return hashlib.sha256(
         senha.encode("utf-8")
     ).hexdigest()
 
 
-# Cria o banco automaticamente
-criar_banco()
-
-
 # ============================================================
-# BASE DE EXERCÍCIOS
+# CARREGAR EXERCÍCIOS DO BANCO DE DADOS
 # ============================================================
 
-EXERCICIOS = {
+def carregar_exercicios():
 
-    "gluteos": [
-        {
-            "nome": "Elevação de quadril",
-            "musculos": "Glúteos",
-            "execucao": "Deite-se de costas, dobre os joelhos e mantenha os pés firmes no chão. Contraia o abdômen e eleve o quadril de forma controlada, apertando os glúteos no ponto mais alto. Depois, abaixe lentamente sem deixar o movimento descontrolado."
-        },
-        {
-            "nome": "Abdução de quadril",
-            "musculos": "Glúteos",
-            "execucao": "Mantenha o tronco firme e faça o movimento de afastar a perna para o lado de maneira controlada. Evite inclinar o corpo para compensar o movimento. Retorne lentamente à posição inicial."
-        },
-        {
-            "nome": "Extensão de quadril",
-            "musculos": "Glúteos",
-            "execucao": "Mantenha o tronco estável e leve uma perna para trás, realizando a extensão do quadril. Faça o movimento sem balançar o corpo e retorne lentamente à posição inicial."
-        },
-        {
-            "nome": "Agachamento",
-            "musculos": "Glúteos e quadríceps",
-            "execucao": "Fique em pé com os pés aproximadamente na largura dos ombros. Flexione os joelhos e leve o quadril para trás, mantendo o tronco estável. Desça de maneira confortável e depois volte à posição inicial controlando o movimento."
-        },
-        {
-            "nome": "Stiff",
-            "musculos": "Glúteos e posteriores",
-            "execucao": "Fique em pé com os pés firmes no chão e mantenha as costas em posição neutra. Leve o quadril para trás enquanto inclina o tronco, mantendo as pernas levemente flexionadas. Depois, volte à posição inicial usando o movimento do quadril."
-        }
-    ],
+    conexao = conectar_banco()
 
-    "quadriceps": [
-        {
-            "nome": "Agachamento",
-            "musculos": "Quadríceps e glúteos",
-            "execucao": "Posicione os pés de forma confortável, mantenha o peito aberto e flexione os joelhos enquanto leva o quadril para trás. Desça de maneira controlada e retorne à posição inicial sem realizar movimentos bruscos."
-        },
-        {
-            "nome": "Leg press",
-            "musculos": "Quadríceps e glúteos",
-            "execucao": "Sente-se no equipamento e mantenha as costas apoiadas. Posicione os pés na plataforma e empurre controladamente, sem travar os joelhos. Depois, flexione novamente as pernas de forma lenta e controlada."
-        },
-        {
-            "nome": "Cadeira extensora",
-            "musculos": "Quadríceps",
-            "execucao": "Sente-se com as costas apoiadas e ajuste o equipamento de acordo com sua posição. Estenda os joelhos de forma controlada, aproximando as pernas da posição reta. Depois, retorne lentamente."
-        }
-    ],
+    try:
 
-    "posteriores": [
-        {
-            "nome": "Mesa flexora",
-            "musculos": "Posteriores da coxa",
-            "execucao": "Deite-se no equipamento com o corpo bem apoiado. Posicione as pernas corretamente e flexione os joelhos, aproximando os pés do corpo. Retorne lentamente à posição inicial."
-        },
-        {
-            "nome": "Stiff",
-            "musculos": "Posteriores e glúteos",
-            "execucao": "Mantenha os pés firmes e os joelhos levemente flexionados. Leve o quadril para trás enquanto inclina o tronco, mantendo as costas em posição neutra. Retorne controladamente à posição inicial."
-        },
-        {
-            "nome": "Flexão nórdica",
-            "musculos": "Posteriores da coxa",
-            "execucao": "Mantenha as pernas estabilizadas e o tronco alinhado. Incline o corpo lentamente para frente, controlando o movimento, e retorne à posição inicial de maneira segura."
-        }
-    ],
+        registros = conexao.execute(
+            """
+            SELECT
+                id,
+                nome,
+                grupo_muscular,
+                musculos,
+                execucao
+            FROM exercicios
+            ORDER BY id
+            """
+        ).fetchall()
 
-    "panturrilhas": [
-        {
-            "nome": "Elevação de panturrilha",
-            "musculos": "Panturrilhas",
-            "execucao": "Fique em uma posição estável e eleve os calcanhares, apoiando o movimento na ponta dos pés. Faça uma pequena pausa no alto e depois abaixe lentamente."
-        },
-        {
-            "nome": "Panturrilha no leg press",
-            "musculos": "Panturrilhas",
-            "execucao": "Posicione os pés na parte adequada da plataforma, mantendo apenas a região da frente dos pés apoiada. Empurre a plataforma com o movimento dos tornozelos, elevando os calcanhares e retornando de forma controlada."
-        }
-    ],
+    finally:
 
-    "costas": [
-        {
-            "nome": "Puxada frontal",
-            "musculos": "Costas e bíceps",
-            "execucao": "Sente-se com o corpo estabilizado e segure a barra com as mãos afastadas. Puxe a barra em direção à parte superior do peito, mantendo os ombros controlados. Depois, retorne lentamente."
-        },
-        {
-            "nome": "Remada baixa",
-            "musculos": "Costas e bíceps",
-            "execucao": "Sente-se no equipamento e mantenha o tronco firme. Puxe o apoio em direção ao corpo, aproximando os cotovelos do tronco. Retorne lentamente, mantendo o controle durante todo o movimento."
-        },
-        {
-            "nome": "Remada unilateral",
-            "musculos": "Costas",
-            "execucao": "Apoie o corpo de maneira estável e mantenha a coluna em posição confortável. Puxe o peso em direção ao tronco, levando o cotovelo para trás. Depois, abaixe lentamente."
-        },
-        {
-            "nome": "Pulldown",
-            "musculos": "Costas",
-            "execucao": "Mantenha o corpo estável e segure o equipamento. Puxe o cabo para baixo utilizando principalmente o movimento dos braços e das costas. Retorne lentamente à posição inicial."
-        }
-    ],
+        conexao.close()
 
-    "peito": [
-        {
-            "nome": "Supino",
-            "musculos": "Peitoral, ombros e tríceps",
-            "execucao": "Deite-se com as costas apoiadas e mantenha os pés firmes. Segure o peso com as mãos e desça de forma controlada em direção ao peito. Depois, empurre o peso para cima sem realizar movimentos bruscos."
-        },
-        {
-            "nome": "Crucifixo",
-            "musculos": "Peitoral",
-            "execucao": "Mantenha as costas apoiadas e os braços posicionados de maneira confortável. Abra os braços de forma controlada e depois aproxime-os novamente, mantendo o movimento lento e estável."
-        },
-        {
-            "nome": "Flexão de braços",
-            "musculos": "Peitoral, ombros e tríceps",
-            "execucao": "Posicione as mãos no chão e mantenha o corpo alinhado. Flexione os cotovelos para aproximar o corpo do chão e depois empurre o chão para retornar à posição inicial."
-        }
-    ],
+    exercicios = {}
 
-    "ombros": [
-        {
-            "nome": "Elevação lateral",
-            "musculos": "Ombros",
-            "execucao": "Fique em pé com os braços ao lado do corpo. Eleve os braços para os lados de maneira controlada, sem balançar o tronco. Depois, abaixe lentamente."
-        },
-        {
-            "nome": "Desenvolvimento de ombros",
-            "musculos": "Ombros e tríceps",
-            "execucao": "Mantenha o corpo estabilizado e segure os pesos na altura dos ombros. Empurre os pesos para cima de maneira controlada e depois retorne lentamente à posição inicial."
-        },
-        {
-            "nome": "Elevação frontal",
-            "musculos": "Ombros",
-            "execucao": "Fique em pé e mantenha os braços próximos ao corpo. Eleve os braços para a frente até uma altura confortável e depois abaixe lentamente, mantendo o tronco estável."
-        }
-    ],
+    for registro in registros:
 
-    "biceps": [
-        {
-            "nome": "Rosca direta",
-            "musculos": "Bíceps",
-            "execucao": "Fique em pé com os braços próximos ao corpo. Flexione os cotovelos para aproximar as mãos dos ombros, sem balançar o tronco. Depois, estenda os braços lentamente."
-        },
-        {
-            "nome": "Rosca martelo",
-            "musculos": "Bíceps e antebraços",
-            "execucao": "Segure os pesos com as palmas das mãos voltadas uma para a outra. Flexione os cotovelos mantendo os braços próximos ao corpo. Depois, retorne lentamente."
-        },
-        {
-            "nome": "Rosca alternada",
-            "musculos": "Bíceps",
-            "execucao": "Segure um peso em cada mão. Flexione um braço de cada vez, mantendo o cotovelo próximo ao corpo. Abaixe lentamente e repita com o outro braço."
-        }
-    ],
+        grupo = registro["grupo_muscular"]
 
-    "triceps": [
-        {
-            "nome": "Tríceps na polia",
-            "musculos": "Tríceps",
-            "execucao": "Fique de frente para a polia e mantenha os cotovelos próximos ao corpo. Empurre o cabo para baixo até estender os braços e depois retorne lentamente à posição inicial."
-        },
-        {
-            "nome": "Tríceps francês",
-            "musculos": "Tríceps",
-            "execucao": "Segure o peso acima da cabeça e mantenha os cotovelos apontados para frente. Flexione os cotovelos levando o peso para trás da cabeça e depois estenda os braços de maneira controlada."
-        }
-    ],
+        if grupo not in exercicios:
+            exercicios[grupo] = []
 
-    "abdomen": [
-        {
-            "nome": "Abdominal tradicional",
-            "musculos": "Abdômen",
-            "execucao": "Deite-se com os joelhos flexionados e os pés apoiados. Contraia o abdômen e eleve o tronco de forma controlada, sem puxar o pescoço. Depois, retorne lentamente."
-        },
-        {
-            "nome": "Prancha",
-            "musculos": "Abdômen e core",
-            "execucao": "Apoie os antebraços e mantenha o corpo alinhado. Contraia o abdômen e evite deixar o quadril cair ou subir excessivamente. Mantenha a posição de forma confortável e controlada."
-        },
-        {
-            "nome": "Abdominal bicicleta",
-            "musculos": "Abdômen",
-            "execucao": "Deite-se de costas e mantenha os joelhos flexionados. Faça o movimento alternado das pernas enquanto realiza a rotação controlada do tronco. Evite puxar o pescoço durante o exercício."
-        }
-    ]
-}
+        exercicios[grupo].append({
+            "id": registro["id"],
+            "nome": registro["nome"],
+            "musculos": registro["musculos"],
+            "execucao": registro["execucao"]
+        })
+
+    return exercicios
 
 
 # ============================================================
@@ -265,7 +93,7 @@ GRUPOS_RELACIONADOS = {
 
 
 # ============================================================
-# ESTILO GERAL
+# ESTILO
 # ============================================================
 
 ESTILO = """
@@ -341,6 +169,21 @@ input:focus {
     margin: auto;
 }
 
+.admin-card {
+    width: 92%;
+    max-width: 1000px;
+    margin: 25px auto;
+    background: white;
+    padding: 25px;
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(70, 40, 100, 0.10);
+    text-align: center;
+}
+
+.admin-card h2 {
+    color: #6f3fb5;
+}
+
 </style>
 """
 
@@ -407,10 +250,6 @@ LOGIN_HTML = """
     display: flex;
     flex-direction: column;
     justify-content: center;
-}
-
-.login-right h2 {
-    margin-bottom: 8px;
 }
 
 .campo {
@@ -495,9 +334,14 @@ assistente virtual Wendy.
 
 <div class="campo">
 
-<label>E-mail</label>
+<label>E-mail ou usuário</label>
 
-<input type="email" name="email" required>
+<input
+    type="text"
+    name="email"
+    placeholder="Digite seu e-mail ou root"
+    required
+>
 
 </div>
 
@@ -505,7 +349,12 @@ assistente virtual Wendy.
 
 <label>Senha</label>
 
-<input type="password" name="senha" required>
+<input
+    type="password"
+    name="senha"
+    placeholder="Digite sua senha"
+    required
+>
 
 </div>
 
@@ -592,10 +441,6 @@ CADASTRO_HTML = """
     font-weight: bold;
 }
 
-.full {
-    grid-column: 1 / -1;
-}
-
 .botao-area {
     text-align: center;
     margin-top: 25px;
@@ -619,10 +464,6 @@ CADASTRO_HTML = """
 
     .form-grid {
         grid-template-columns: 1fr;
-    }
-
-    .full {
-        grid-column: auto;
     }
 
 }
@@ -660,67 +501,43 @@ Cadastre seus dados para acessar o Power Up.
 <div class="form-grid">
 
 <div class="campo">
-
 <label>Nome</label>
-
 <input type="text" name="nome" value="{{ dados.nome }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>E-mail</label>
-
 <input type="email" name="email" value="{{ dados.email }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>Telefone</label>
-
 <input type="text" name="telefone" value="{{ dados.telefone }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>CEP</label>
-
 <input type="text" name="cep" value="{{ dados.cep }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>Data de nascimento</label>
-
 <input type="date" name="data_nascimento" value="{{ dados.data_nascimento }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>Academia</label>
-
 <input type="text" name="academia" value="{{ dados.academia }}" required>
-
 </div>
 
 <div class="campo">
-
 <label>Senha</label>
-
 <input type="password" name="senha" required>
-
 </div>
 
 <div class="campo">
-
 <label>Confirmar senha</label>
-
 <input type="password" name="confirmar_senha" required>
-
 </div>
 
 </div>
@@ -820,18 +637,9 @@ HOME_HTML = """
     padding: 15px 20px;
     border-radius: 30px;
     font-weight: bold;
-    box-shadow: 0 8px 25px rgba(70, 40, 100, 0.25);
 }
 
 @media(max-width: 700px) {
-
-    .header {
-        padding: 16px 20px;
-    }
-
-    .hero h1 {
-        font-size: 32px;
-    }
 
     .cards {
         grid-template-columns: 1fr;
@@ -861,9 +669,7 @@ Sair
 
 <h1>Olá, {{ nome }}! 💜</h1>
 
-<p>
-Bem-vinda ao Power Up.
-</p>
+<p>Bem-vinda ao Power Up.</p>
 
 </div>
 
@@ -890,7 +696,7 @@ Montar meu treino
 
 <p>
 Converse com a assistente virtual do Power Up
-e tire dúvidas sobre exercícios e sobre a plataforma.
+e tire dúvidas sobre exercícios.
 </p>
 
 <a href="{{ url_for('wendy') }}" class="botao">
@@ -900,6 +706,24 @@ Conversar com Wendy
 </div>
 
 </div>
+
+{% if session.get("root") %}
+
+<div class="admin-card">
+
+<h2>👑 Área do administrador</h2>
+
+<p>
+Você está conectado como usuário root.
+</p>
+
+<a href="{{ url_for('exportar_json') }}" class="botao">
+📄 Exportar usuários em JSON
+</a>
+
+</div>
+
+{% endif %}
 
 <a href="{{ url_for('wendy') }}" class="wendy-float">
 💬 Wendy
@@ -957,17 +781,6 @@ WENDY_HTML = """
     margin: 0;
 }
 
-.subtitulo-wendy {
-    display: inline-block;
-    margin-top: 9px;
-    padding: 6px 12px;
-    border-radius: 20px;
-    background: white;
-    color: #5b348c;
-    font-weight: bold;
-    font-size: 14px;
-}
-
 .chat-body {
     padding: 30px;
 }
@@ -994,26 +807,6 @@ WENDY_HTML = """
     font-weight: bold;
 }
 
-@media(max-width: 500px) {
-
-    .wendy-page {
-        padding: 15px 10px;
-    }
-
-    .chat-body {
-        padding: 20px 17px;
-    }
-
-    .chat-top {
-        padding: 20px 12px;
-    }
-
-    .subtitulo-wendy {
-        font-size: 13px;
-    }
-
-}
-
 </style>
 
 </head>
@@ -1034,9 +827,7 @@ WENDY_HTML = """
 
 <h1>Wendy</h1>
 
-<div class="subtitulo-wendy">
-Sua assistente virtual
-</div>
+<p>Sua assistente virtual</p>
 
 </div>
 
@@ -1114,15 +905,12 @@ DUVIDAS_HTML = """
 
 .duvidas-box h1 {
     text-align: center;
-    margin-top: 0;
-    color: #302442;
 }
 
 .introducao {
     text-align: center;
     color: #665a75;
     margin-bottom: 30px;
-    line-height: 1.6;
 }
 
 .exercicio-duvida {
@@ -1130,7 +918,6 @@ DUVIDAS_HTML = """
     border-radius: 15px;
     margin-bottom: 12px;
     overflow: hidden;
-    background: #fff;
 }
 
 .exercicio-duvida summary {
@@ -1141,7 +928,6 @@ DUVIDAS_HTML = """
     color: #5b348c;
     display: flex;
     justify-content: space-between;
-    align-items: center;
 }
 
 .exercicio-duvida summary::-webkit-details-marker {
@@ -1151,35 +937,13 @@ DUVIDAS_HTML = """
 .exercicio-duvida summary::after {
     content: "⌄";
     font-size: 22px;
-    color: #6f3fb5;
-    transition: 0.2s;
-}
-
-.exercicio-duvida[open] summary::after {
-    transform: rotate(180deg);
 }
 
 .exercicio-conteudo {
-    padding: 0 20px 20px;
+    padding: 15px 20px 20px;
     background: #faf8ff;
     border-top: 1px solid #eee5f7;
     line-height: 1.6;
-}
-
-.exercicio-conteudo p {
-    margin: 12px 0 0;
-}
-
-@media(max-width: 600px) {
-
-    .duvidas-page {
-        padding: 15px 10px 35px;
-    }
-
-    .duvidas-box {
-        padding: 25px 17px;
-    }
-
 }
 
 </style>
@@ -1272,35 +1036,6 @@ TREINO_HTML = """
     padding: 25px 15px 50px;
 }
 
-.topo-treino {
-    position: relative;
-    width: 100%;
-    max-width: 1100px;
-    margin: 0 auto 35px;
-    min-height: 55px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.topo-treino .logo {
-    text-align: center;
-}
-
-.botao-inicio {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    background: white;
-    color: #6f3fb5;
-    border: 1px solid #d9cbed;
-    padding: 9px 15px;
-    border-radius: 12px;
-    font-weight: bold;
-    white-space: nowrap;
-}
-
 .treino-box {
     background: white;
     width: 100%;
@@ -1313,7 +1048,6 @@ TREINO_HTML = """
 
 .treino-box h1 {
     text-align: center;
-    margin-top: 0;
 }
 
 .secao {
@@ -1356,48 +1090,6 @@ TREINO_HTML = """
     margin-top: 35px;
 }
 
-@media(max-width: 600px) {
-
-    .treino-page {
-        padding: 15px 10px 40px;
-    }
-
-    .topo-treino {
-        min-height: 75px;
-        margin-bottom: 20px;
-    }
-
-    .topo-treino .logo {
-        font-size: 23px;
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        white-space: nowrap;
-    }
-
-    .botao-inicio {
-        right: 0;
-        top: 50%;
-        padding: 8px 10px;
-        font-size: 13px;
-    }
-
-    .treino-box {
-        padding: 25px 18px;
-    }
-
-    .opcoes {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .opcao label {
-        text-align: center;
-        font-size: 14px;
-    }
-
-}
-
 </style>
 
 </head>
@@ -1406,13 +1098,13 @@ TREINO_HTML = """
 
 <div class="treino-page">
 
-<div class="topo-treino">
+<div style="max-width:1100px;margin:0 auto 25px;display:flex;justify-content:space-between;align-items:center;">
 
 <div class="logo">
 POWER UP
 </div>
 
-<a href="{{ url_for('home') }}" class="botao-inicio">
+<a href="{{ url_for('home') }}" class="botao">
 ← Início
 </a>
 
@@ -1423,8 +1115,7 @@ POWER UP
 <h1>Monte seu treino 💜</h1>
 
 <p style="text-align:center;">
-Escolha as opções abaixo para que o sistema
-gere automaticamente uma sugestão.
+Escolha as opções abaixo para que o sistema gere automaticamente uma sugestão.
 </p>
 
 <form method="POST">
@@ -1469,10 +1160,12 @@ gere automaticamente uma sugestão.
 
 <div class="opcao">
 
-<input type="checkbox"
-       id="{{ chave }}"
-       name="grupos"
-       value="{{ chave }}">
+<input
+    type="checkbox"
+    id="{{ chave }}"
+    name="grupos"
+    value="{{ chave }}"
+>
 
 <label for="{{ chave }}">
 {{ nome }}
@@ -1496,10 +1189,12 @@ gere automaticamente uma sugestão.
 
 <div class="opcao">
 
-<input type="checkbox"
-       id="{{ dia }}"
-       name="dias"
-       value="{{ dia }}">
+<input
+    type="checkbox"
+    id="{{ dia }}"
+    name="dias"
+    value="{{ dia }}"
+>
 
 <label for="{{ dia }}">
 {{ dia }}
@@ -1520,56 +1215,23 @@ gere automaticamente uma sugestão.
 <div class="opcoes">
 
 <div class="opcao">
-
-<input type="radio"
-       id="tempo30"
-       name="tempo"
-       value="30"
-       required>
-
-<label for="tempo30">
-30 minutos
-</label>
-
+<input type="radio" id="tempo30" name="tempo" value="30" required>
+<label for="tempo30">30 minutos</label>
 </div>
 
 <div class="opcao">
-
-<input type="radio"
-       id="tempo45"
-       name="tempo"
-       value="45">
-
-<label for="tempo45">
-45 minutos
-</label>
-
+<input type="radio" id="tempo45" name="tempo" value="45">
+<label for="tempo45">45 minutos</label>
 </div>
 
 <div class="opcao">
-
-<input type="radio"
-       id="tempo60"
-       name="tempo"
-       value="60">
-
-<label for="tempo60">
-60 minutos
-</label>
-
+<input type="radio" id="tempo60" name="tempo" value="60">
+<label for="tempo60">60 minutos</label>
 </div>
 
 <div class="opcao">
-
-<input type="radio"
-       id="tempo90"
-       name="tempo"
-       value="90">
-
-<label for="tempo90">
-90 minutos
-</label>
-
+<input type="radio" id="tempo90" name="tempo" value="90">
+<label for="tempo90">90 minutos</label>
 </div>
 
 </div>
@@ -1583,43 +1245,18 @@ gere automaticamente uma sugestão.
 <div class="opcoes">
 
 <div class="opcao">
-
-<input type="radio"
-       id="iniciante"
-       name="experiencia"
-       value="Iniciante"
-       required>
-
-<label for="iniciante">
-Iniciante
-</label>
-
+<input type="radio" id="iniciante" name="experiencia" value="Iniciante" required>
+<label for="iniciante">Iniciante</label>
 </div>
 
 <div class="opcao">
-
-<input type="radio"
-       id="intermediario"
-       name="experiencia"
-       value="Intermediário">
-
-<label for="intermediario">
-Intermediário
-</label>
-
+<input type="radio" id="intermediario" name="experiencia" value="Intermediário">
+<label for="intermediario">Intermediário</label>
 </div>
 
 <div class="opcao">
-
-<input type="radio"
-       id="avancado"
-       name="experiencia"
-       value="Avançado">
-
-<label for="avancado">
-Avançado
-</label>
-
+<input type="radio" id="avancado" name="experiencia" value="Avançado">
+<label for="avancado">Avançado</label>
 </div>
 
 </div>
@@ -1669,24 +1306,6 @@ RESULTADO_HTML = """
     padding: 25px 15px 50px;
 }
 
-.resultado-topo {
-    width: 100%;
-    max-width: 1100px;
-    margin: 0 auto 25px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.home-button {
-    background: white;
-    color: #6f3fb5;
-    border: 1px solid #d9cbed;
-    padding: 10px 15px;
-    border-radius: 12px;
-    font-weight: bold;
-}
-
 .resultado-box {
     background: white;
     width: 100%;
@@ -1722,7 +1341,6 @@ RESULTADO_HTML = """
 }
 
 .exercicio h3 {
-    margin-top: 0;
     color: #5b348c;
 }
 
@@ -1739,31 +1357,6 @@ RESULTADO_HTML = """
     line-height: 1.6;
 }
 
-@media(max-width: 600px) {
-
-    .resultado-page {
-        padding: 15px 10px 35px;
-    }
-
-    .resultado-topo {
-        margin-bottom: 20px;
-    }
-
-    .resultado-topo .logo {
-        font-size: 22px;
-    }
-
-    .home-button {
-        font-size: 13px;
-        padding: 8px 10px;
-    }
-
-    .resultado-box {
-        padding: 23px 17px;
-    }
-
-}
-
 </style>
 
 </head>
@@ -1772,13 +1365,13 @@ RESULTADO_HTML = """
 
 <div class="resultado-page">
 
-<div class="resultado-topo">
+<div style="width:100%;max-width:1100px;margin:0 auto 25px;display:flex;justify-content:space-between;align-items:center;">
 
 <div class="logo">
 POWER UP
 </div>
 
-<a href="{{ url_for('home') }}" class="home-button">
+<a href="{{ url_for('home') }}" class="botao">
 ← Início
 </a>
 
@@ -1847,8 +1440,6 @@ POWER UP
 Este treino é uma sugestão gerada automaticamente
 para fins educativos e demonstrativos. Ele não substitui
 a orientação de um profissional de Educação Física.
-Respeite seus limites e procure orientação adequada
-antes de realizar exercícios.
 
 </div>
 
@@ -1897,6 +1488,8 @@ def escolher_quantidade_exercicios(tempo, experiencia):
 
 def montar_semana(dias, grupos, tempo, experiencia):
 
+    exercicios_banco = carregar_exercicios()
+
     semana = {}
 
     if not grupos:
@@ -1920,26 +1513,39 @@ def montar_semana(dias, grupos, tempo, experiencia):
 
     for grupo in grupos_finais:
 
-        for exercicio in EXERCICIOS.get(grupo, []):
+        for exercicio in exercicios_banco.get(grupo, []):
 
             if exercicio not in todos_exercicios:
                 todos_exercicios.append(exercicio)
 
     if not todos_exercicios:
-        todos_exercicios = EXERCICIOS["gluteos"]
+
+        for exercicios in exercicios_banco.values():
+
+            for exercicio in exercicios:
+
+                if exercicio not in todos_exercicios:
+                    todos_exercicios.append(exercicio)
+
+    if not todos_exercicios:
+        return {}
 
     if not dias:
         dias = ["Segunda-feira"]
 
     for indice, dia in enumerate(dias):
 
-        inicio = (indice * quantidade) % len(todos_exercicios)
+        inicio = (
+            indice * quantidade
+        ) % len(todos_exercicios)
 
         exercicios_dia = []
 
         for i in range(quantidade):
 
-            posicao = (inicio + i) % len(todos_exercicios)
+            posicao = (
+                inicio + i
+            ) % len(todos_exercicios)
 
             exercicio = todos_exercicios[posicao]
 
@@ -1952,7 +1558,7 @@ def montar_semana(dias, grupos, tempo, experiencia):
 
 
 # ============================================================
-# ROTAS
+# LOGIN
 # ============================================================
 
 @app.route("/", methods=["GET", "POST"])
@@ -1962,30 +1568,61 @@ def login():
 
     if request.method == "POST":
 
-        email = request.form.get("email", "").strip().lower()
-        senha = request.form.get("senha", "")
+        login = request.form.get(
+            "email",
+            ""
+        ).strip().lower()
+
+        senha = request.form.get(
+            "senha",
+            ""
+        )
+
+        # ROOT
+        if login == "root" and senha == "root":
+
+            session["usuario_id"] = 0
+            session["nome"] = "Administrador"
+            session["email"] = "root"
+            session["root"] = True
+
+            return redirect(url_for("home"))
+
+        # USUÁRIO NORMAL
 
         senha_hash = criar_hash_senha(senha)
 
         conexao = conectar_banco()
 
-        usuario = conexao.execute(
-            """
-            SELECT *
-            FROM usuarios
-            WHERE email = ?
-            AND senha = ?
-            """,
-            (email, senha_hash)
-        ).fetchone()
+        try:
 
-        conexao.close()
+            usuario = conexao.execute(
+                """
+                SELECT *
+                FROM usuarios
+                WHERE email = ?
+                AND senha = ?
+                """,
+                (
+                    login,
+                    senha_hash
+                )
+            ).fetchone()
+
+        except sqlite3.Error:
+
+            usuario = None
+
+        finally:
+
+            conexao.close()
 
         if usuario:
 
             session["usuario_id"] = usuario["id"]
             session["nome"] = usuario["nome"]
             session["email"] = usuario["email"]
+            session["root"] = False
 
             return redirect(url_for("home"))
 
@@ -2017,18 +1654,45 @@ def cadastro():
 
     if request.method == "POST":
 
-        nome = request.form.get("nome", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        telefone = request.form.get("telefone", "").strip()
-        cep = request.form.get("cep", "").strip()
+        nome = request.form.get(
+            "nome",
+            ""
+        ).strip()
+
+        email = request.form.get(
+            "email",
+            ""
+        ).strip().lower()
+
+        telefone = request.form.get(
+            "telefone",
+            ""
+        ).strip()
+
+        cep = request.form.get(
+            "cep",
+            ""
+        ).strip()
+
         data_nascimento = request.form.get(
             "data_nascimento",
             ""
         ).strip()
-        academia = request.form.get("academia", "").strip()
 
-        senha = request.form.get("senha", "")
-        confirmar = request.form.get("confirmar_senha", "")
+        academia = request.form.get(
+            "academia",
+            ""
+        ).strip()
+
+        senha = request.form.get(
+            "senha",
+            ""
+        )
+
+        confirmar = request.form.get(
+            "confirmar_senha",
+            ""
+        )
 
         dados = {
             "nome": nome,
@@ -2051,9 +1715,9 @@ def cadastro():
 
         senha_hash = criar_hash_senha(senha)
 
-        try:
+        conexao = conectar_banco()
 
-            conexao = conectar_banco()
+        try:
 
             conexao.execute(
                 """
@@ -2090,11 +1754,10 @@ def cadastro():
                 (email,)
             ).fetchone()
 
-            conexao.close()
-
             session["usuario_id"] = usuario["id"]
             session["nome"] = usuario["nome"]
             session["email"] = usuario["email"]
+            session["root"] = False
 
             return redirect(url_for("home"))
 
@@ -2102,11 +1765,13 @@ def cadastro():
 
             erro = "Este e-mail já está cadastrado."
 
-            return render_template_string(
-                CADASTRO_HTML,
-                erro=erro,
-                dados=dados
-            )
+        except sqlite3.Error:
+
+            erro = "Não foi possível acessar o banco de dados."
+
+        finally:
+
+            conexao.close()
 
     return render_template_string(
         CADASTRO_HTML,
@@ -2125,14 +1790,12 @@ def home():
     if "usuario_id" not in session:
         return redirect(url_for("login"))
 
-    nome = session.get(
-        "nome",
-        "Usuária"
-    )
-
     return render_template_string(
         HOME_HTML,
-        nome=nome
+        nome=session.get(
+            "nome",
+            "Usuária"
+        )
     )
 
 
@@ -2161,9 +1824,11 @@ def duvidas_exercicios():
     if "usuario_id" not in session:
         return redirect(url_for("login"))
 
+    exercicios_banco = carregar_exercicios()
+
     exercicios = []
 
-    for grupo in EXERCICIOS.values():
+    for grupo in exercicios_banco.values():
 
         for exercicio in grupo:
 
@@ -2211,25 +1876,35 @@ def treino():
 
     if request.method == "POST":
 
-        objetivos = request.form.getlist("objetivos")
-        grupos_selecionados = request.form.getlist("grupos")
-        dias_selecionados = request.form.getlist("dias")
+        objetivos = request.form.getlist(
+            "objetivos"
+        )[:2]
+
+        grupos_selecionados = request.form.getlist(
+            "grupos"
+        )[:3]
+
+        dias_selecionados = request.form.getlist(
+            "dias"
+        )
 
         try:
+
             tempo = int(
-                request.form.get("tempo", 30)
+                request.form.get(
+                    "tempo",
+                    30
+                )
             )
+
         except ValueError:
+
             tempo = 30
 
         experiencia = request.form.get(
             "experiencia",
             "Iniciante"
         )
-
-        objetivos = objetivos[:2]
-
-        grupos_selecionados = grupos_selecionados[:3]
 
         semana = montar_semana(
             dias_selecionados,
@@ -2267,6 +1942,69 @@ def treino():
         TREINO_HTML,
         grupos=grupos,
         dias=dias
+    )
+
+
+# ============================================================
+# EXPORTAR USUÁRIOS EM JSON
+# SOMENTE ROOT
+# ============================================================
+
+@app.route("/exportar-json")
+def exportar_json():
+
+    if not session.get("root"):
+        return redirect(url_for("login"))
+
+    conexao = conectar_banco()
+
+    try:
+
+        usuarios = conexao.execute(
+            """
+            SELECT
+                id,
+                nome,
+                email,
+                telefone,
+                cep,
+                data_nascimento,
+                academia
+            FROM usuarios
+            """
+        ).fetchall()
+
+    finally:
+
+        conexao.close()
+
+    dados = []
+
+    for usuario in usuarios:
+
+        dados.append({
+            "id": usuario["id"],
+            "nome": usuario["nome"],
+            "email": usuario["email"],
+            "telefone": usuario["telefone"],
+            "cep": usuario["cep"],
+            "data_nascimento": usuario["data_nascimento"],
+            "academia": usuario["academia"]
+        })
+
+    arquivo_json = json.dumps(
+        dados,
+        ensure_ascii=False,
+        indent=4
+    )
+
+    return Response(
+        arquivo_json,
+        mimetype="application/json",
+        headers={
+            "Content-Disposition":
+            "attachment; filename=usuarios_power_up.json"
+        }
     )
 
 

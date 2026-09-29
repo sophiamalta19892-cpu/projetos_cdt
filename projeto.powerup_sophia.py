@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for, render_template_string, session
+from flask import Flask, request, redirect, url_for, render_template_string, session, Response
 import sqlite3
 import hashlib
 import os
